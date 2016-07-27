@@ -3766,6 +3766,13 @@ otherwise, if ELT is provided, toggle the presence of ELT in VAR."
      "---"
      ["Run shell command" fountain-export-shell-command]
      "---"
+     ["US Letter" (customize-set-variable 'fountain-export-page-size 'letter)
+      :style radio
+      :selected (eq fountain-export-page-size 'letter)]
+     ["A4" (customize-set-variable 'fountain-export-page-size 'a4)
+      :style radio
+      :selected (eq fountain-export-page-size 'a4)]
+     "---"
      ["Include Title Page"
       (fountain-toggle-custom-variable
        'fountain-export-include-title-page)
