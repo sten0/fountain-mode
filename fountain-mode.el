@@ -1887,6 +1887,16 @@ Passed to `format' with export format as single variable."
                 (const :tag "A4" a4))
   :group 'fountain-export)
 
+(defcustom fountain-export-left-margin
+  1.5
+  "Float representing left page margin in inches."
+  :type 'float
+  :group 'fountain-export)
+
+(defcustom fountain-export-top-margin
+  1.0
+  "Float representing top page margin in inches.")
+
 (defcustom fountain-export-font
   '("Courier" "Courier New" "monospace")
   "List of font names to use when exporting, by priority."
