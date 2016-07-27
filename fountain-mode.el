@@ -1547,6 +1547,91 @@ data reflects `outline-regexp'."
       (fountain-hide-or-fill-element)
       (forward-line 1))))
 
+
+;;; Page Locking
+
+(defcustom fountain-page-max-lines
+  '((letter 55) (a4 60))
+  "Integer representing maximum number of lines on a page.
+
+WARNING: if you change this option after locking pages in a
+script, you may get incorrect output."
+  :type '(choice integer
+                 (repeat (group (string :tag "Page size") integer)))
+  :group 'fountain-page)
+
+(defun fountain-page-split (&optional num)
+  (interactive)
+  (cond ((fountain-blank-p)
+         (let ((x (point)))
+           (skip-chars-forward "\n\s\t")
+           (if (or (fountain-trans-p)
+                   (fountain-center-p))
+               (fountain-page-split)
+             (goto-char x)
+             (skip-chars-backward "\n\s\t")
+             (forward-line 0)
+             (if (fountain-scene-heading-p)
+                 (fountain-page-split)
+               (goto-char x)
+               (insert "\n===")
+               (if num (insert "\s" num))
+               (insert "\n")))))
+        ((fountain-scene-heading-p)
+         (forward-line 0)
+         (insert "===")
+         (if num (insert "\s" num))
+         (insert "\n\n"))
+        ((or (fountain-trans-p)
+             (fountain-center-p))
+         (skip-chars-backward "\n\s\t")
+         (forward-line 0)
+         (fountain-page-split))
+        ((fountain-character-p)
+         (forward-line 0)
+         (insert "===")
+         (if num (insert "\s" num))
+         (insert "\n\n"))
+        ((fountain-dialog-p)
+         (skip-chars-forward "\s")
+         (unless (looking-back (sentence-end))
+           (forward-sentence -1))
+         (if (fountain-character-p)
+             (fountain-page-split)
+           (let ((x (point)))
+             (forward-char -1)
+             (if (or (fountain-character-p)
+                   (fountain-paren-p))
+               (fountain-page-split))
+           (goto-char x)
+           (let ((name (fountain-get-character -1)))
+             (insert "\n\n===")
+             (if num (insert "\s" num))
+             (insert "\n\n")
+             (insert name "\s" fountain-continued-dialog-string "\n")))))
+        ((fountain-action-p)
+         (skip-chars-forward "\s")
+         (unless (looking-back (sentence-end))
+           (forward-sentence -1))
+         (let ((x (point)))
+           (skip-chars-backward "\n\s\t")
+           (forward-line 0)
+           (if (fountain-scene-heading-p)
+               (fountain-page-split)
+             (goto-char x)
+             (unless (save-excursion
+                       (forward-char -1)
+                       (fountain-blank-p))
+               (insert "\n\n"))
+             (insert "===")
+             (if num (insert "\s" num))
+             (unless (save-excursion
+                       (forward-char 1)
+                       (fountain-blank-p))
+               (insert "\n\n")))))))
+
+
+;;; Parsing
 
 (defun fountain-parse-section-heading ()
   "Return an element list for matched section heading at point."
