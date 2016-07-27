@@ -986,11 +986,20 @@ These are required for functions to operate with temporary buffers."
 
 (defalias 'fountain-boneyard-p 'fountain-comment-p)
 
+(defun fountain-page-break-p ()
+  "Return page-break if point is at a page-break, nil otherwise."
+  (save-excursion
+    (save-restriction
+      (widen)
+      (forward-line 0)
+      (looking-at fountain-page-break-regexp))))
+
 (defun fountain-tachyon-p ()
   "Return non-nil if point is at a non-interfering element.
 These include blank lines, section headings, synopses, notes, and
 comments."
   (or (fountain-blank-p)
+      (fountain-page-break-p)
       (fountain-comment-p)
       (fountain-section-heading-p) ; FIXME: what about stageplays?
       (fountain-synopsis-p)
