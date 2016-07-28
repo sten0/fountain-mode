@@ -1472,6 +1472,15 @@ data reflects `outline-regexp'."
 
 ;;; Filling
 
+(defgroup fountain-fill ()
+  "Options for filling elements.
+
+Filling elements is used both in exporting to text and
+PostScript, and in calculating page length for page locking and
+export."
+  :prefix "fountain-fill-"
+  :group 'fountain)
+
 (defcustom fountain-fill-section-heading
   (cons 0 61)
   "Cons cell of integers for indenting and filling section headings.
