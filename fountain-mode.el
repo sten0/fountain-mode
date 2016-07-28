@@ -1726,13 +1726,14 @@ Leave point at end of element."
 ;;; Page Locking
 
 (defcustom fountain-page-max-lines
-  '((letter 55) (a4 60))
+  '((letter . 55) (a4 . 60))
   "Integer representing maximum number of lines on a page.
 
 WARNING: if you change this option after locking pages in a
 script, you may get incorrect output."
   :type '(choice integer
-                 (repeat (group (string :tag "Page size") integer)))
+                 (list (cons (const :tag "US Letter" letter) integer)
+                       (cons (const :tag "A4" a4) integer)))
   :group 'fountain-page)
 
 (defun fountain-page-split (&optional num)
