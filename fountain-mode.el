@@ -1557,17 +1557,17 @@ delete the element. Otherwise add an invisible text property.
 
 Leave point at end of element."
   (cond
-   ((fountain-metadata-p)
+   ((fountain-match-metadata)
     (let ((beg (match-beginning 0))
           (end (progn
-                 (while (fountain-metadata-p)
+                 (while (fountain-match-metadata)
                    (forward-line 1))
                  (skip-chars-forward "\n\s\t")
                  (point))))
       (if delete
           (delete-region beg end)
         (put-text-property beg end 'invisible t))))
-   ((fountain-section-heading-p)
+   ((fountain-match-section-heading)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1583,7 +1583,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-scene-heading-p)
+   ((fountain-match-scene-heading)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1603,7 +1603,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-action-p)
+   ((fountain-match-action)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1617,7 +1617,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-character-p)
+   ((fountain-match-character)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1633,7 +1633,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-paren-p)
+   ((fountain-match-paren)
     (let ((beg (match-beginning 0))
           (end ((progn
                   (goto-char (match-end 0))
@@ -1646,7 +1646,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-dialog-p)
+   ((fountain-match-dialog)
     (let ((beg (match-beginning 0))
           (end (progn
                  (search-forward "\n" (match-end 0) 'move)
@@ -1658,7 +1658,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-trans-p)
+   ((fountain-match-trans)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1673,7 +1673,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-synopsis-p)
+   ((fountain-match-synopsis)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1689,7 +1689,7 @@ Leave point at end of element."
         (if delete
             (delete-region beg end)
           (put-text-property beg end 'invisible t)))))
-   ((fountain-note-p)
+   ((fountain-match-note)
     (let ((beg (match-beginning 0))
           (end (progn
                  (goto-char (match-end 0))
@@ -1733,43 +1733,43 @@ script, you may get incorrect output."
   (cond ((fountain-blank-p)
          (let ((x (point)))
            (skip-chars-forward "\n\s\t")
-           (if (or (fountain-trans-p)
-                   (fountain-center-p))
+           (if (or (fountain-match-trans)
+                   (fountain-match-center))
                (fountain-page-split)
              (goto-char x)
              (skip-chars-backward "\n\s\t")
              (forward-line 0)
-             (if (fountain-scene-heading-p)
+             (if (fountain-match-scene-heading)
                  (fountain-page-split)
                (goto-char x)
                (insert "\n===")
                (if num (insert "\s" num))
                (insert "\n")))))
-        ((fountain-scene-heading-p)
+        ((fountain-match-scene-heading)
          (forward-line 0)
          (insert "===")
          (if num (insert "\s" num))
          (insert "\n\n"))
-        ((or (fountain-trans-p)
-             (fountain-center-p))
+        ((or (fountain-match-trans)
+             (fountain-match-center))
          (skip-chars-backward "\n\s\t")
          (forward-line 0)
          (fountain-page-split))
-        ((fountain-character-p)
+        ((fountain-match-character)
          (forward-line 0)
          (insert "===")
          (if num (insert "\s" num))
          (insert "\n\n"))
-        ((fountain-dialog-p)
+        ((fountain-match-dialog)
          (skip-chars-forward "\s")
          (unless (looking-back (sentence-end))
            (forward-sentence -1))
-         (if (fountain-character-p)
+         (if (fountain-match-character)
              (fountain-page-split)
            (let ((x (point)))
              (forward-char -1)
-             (if (or (fountain-character-p)
-                   (fountain-paren-p))
+             (if (or (fountain-match-character)
+                   (fountain-match-paren))
                (fountain-page-split))
            (goto-char x)
            (let ((name (fountain-get-character -1)))
@@ -1777,14 +1777,14 @@ script, you may get incorrect output."
              (if num (insert "\s" num))
              (insert "\n\n")
              (insert name "\s" fountain-continued-dialog-string "\n")))))
-        ((fountain-action-p)
+        ((fountain-match-action)
          (skip-chars-forward "\s")
          (unless (looking-back (sentence-end))
            (forward-sentence -1))
          (let ((x (point)))
            (skip-chars-backward "\n\s\t")
            (forward-line 0)
-           (if (fountain-scene-heading-p)
+           (if (fountain-match-scene-heading)
                (fountain-page-split)
              (goto-char x)
              (unless (save-excursion
