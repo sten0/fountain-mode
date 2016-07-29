@@ -633,26 +633,26 @@ Set with `fountain-init-scene-heading-regexp'.
     Group 2:    match leading . (for forced element)
     Group 3:    match scene heading without scene number (for export)
     Group 4:    match space between scene heading and scene number
-    Group 5:    match scene number with # prefix
+    Group 5:    match scene number with # delimiters
     Group 6:    match scene number
 
-Requires `fountain-scene-heading-p' for preceding blank line.")
+Requires `fountain-match-scene-heading' for preceding blank line.")
 
 (defconst fountain-forced-scene-heading-regexp
   "\\(?2:\\.\\)\\(?3:\\<.*?\\)"
   "Regular expression for matching forced scene headings.
-Requires `fountain-scene-heading-p' for preceding blank line.")
+Requires `fountain-match-scene-heading' for preceding blank line.")
 
 (defconst fountain-scene-number-regexp
-  "\\(?:\\(?4:[\s\t]+\\)\\(?:#\\(?5:[a-z0-9\\.-]+\\)#\\)\\)?"
+  "\\(?4:[\s\t]+\\)\\(?5:#\\(?6:[a-z0-9\\.-]+\\)#\\)"
   "Regular expression for matching scene numbers.
-Assumes line matches `fountain-scene-heading-p'.")
+Assumes line matches `fountain-match-scene-heading'.")
 
 (defvar fountain-trans-regexp
   nil
   "Regular expression for matching transitions.
 Set with `fountain-init-trans-regexp'. Requires
-`fountain-trans-p' for preceding and succeeding blank lines.")
+`fountain-match-trans' for preceding and succeeding blank lines.")
 
 (defconst fountain-blank-regexp
   "^\s?$"
@@ -677,7 +677,7 @@ Set with `fountain-init-trans-regexp'. Requires
           "\\|"
           "^[\s\t]+\\(?1:\\(?3:.+\\)\\)")
   "Regular expression for matching multi-line metadata values.
-Requires `fountain-metadata-p' for `bobp'.")
+Requires `fountain-match-metadata' for `bobp'.")
 
 (defconst fountain-character-regexp
   (concat "^[\s\t]*\\(?1:\\(?:"
@@ -695,14 +695,14 @@ Requires `fountain-metadata-p' for `bobp'.")
     Group 4:    match character name only
     Group 5:    match trailing ^ (for dual dialog)
 
-Requires `fountain-character-p'.")
+Requires `fountain-match-character'.")
 
 (defconst fountain-paren-regexp
   (concat "^[\s\t]*\\(?3:([^)\n]*)\\)[\s\t]*\\(?:"
           fountain-comment-regexp
           "\\)?$")
   "Regular expression for matching parentheticals.
-Requires `fountain-paren-p' for preceding character or dialog.")
+Requires `fountain-match-paren' for preceding character or dialog.")
 
 (defconst fountain-action-regexp
   (concat "\\(.\\|\n\\)+?\n" fountain-blank-regexp)
@@ -863,14 +863,15 @@ bold-italic delimiters together, e.g.
   (setq fountain-scene-heading-regexp
         (concat "^\\(?1:"
                 fountain-forced-scene-heading-regexp
+                "\\(?:"
                 fountain-scene-number-regexp
-                "\\)[\s\t]*$"
+                "\\)?\\)[\s\t]*$"
                 "\\|"
                 "^\\(?1:\\(?3:"
                 (regexp-opt fountain-scene-heading-prefix-list)
-                "[.\s\t].*?\\)"
+                "[.\s\t].*?\\)\\(?:"
                 fountain-scene-number-regexp
-                "\\)[\s\t]*$")))
+                "\\)?\\)[\s\t]*$")))
 
 (defun fountain-init-trans-regexp ()
   "Initialize `fountain-trans-regexp'."
@@ -888,7 +889,7 @@ bold-italic delimiters together, e.g.
                       "\\|"
                       fountain-scene-heading-regexp)))
 
-(defun fountain-init-imenu-generic-expression ()
+(defun fountain-init-imenu-generic-expression () ; FIXME: allow user customize
   "Initialize `imenu-generic-expression'."
   (setq imenu-generic-expression
         (list
@@ -927,7 +928,17 @@ These are required for functions to operate with temporary buffers."
       ;; don't modify match-data
       (looking-at-p fountain-blank-regexp))))
 
-(defun fountain-metadata-p ()
+(defun fountain-tachyon-p ()
+  "Return non-nil if point is at a non-interfering element.
+These include blank lines, section headings, synopses, notes, and
+comments."
+  (or (fountain-blank-p)
+      (fountain-match-comment)
+      (fountain-match-section-heading) ; FIXME: what about stageplays?
+      (fountain-match-synopsis)
+      (fountain-match-note)))
+
+(defun fountain-match-metadata ()
   "Match metadata if point is at metadata, nil otherwise."
   (save-excursion
     (save-restriction
@@ -937,9 +948,9 @@ These are required for functions to operate with temporary buffers."
            (or (bobp)
                (save-match-data
                  (forward-line -1)
-                 (fountain-metadata-p)))))))
+                 (fountain-match-metadata)))))))
 
-(defun fountain-section-heading-p ()
+(defun fountain-match-section-heading ()
   "Match section heading if point is at section heading, nil otherwise."
   (save-excursion
     (save-restriction
@@ -947,7 +958,7 @@ These are required for functions to operate with temporary buffers."
       (forward-line 0)
       (looking-at fountain-section-heading-regexp))))
 
-(defun fountain-synopsis-p ()
+(defun fountain-match-synopsis ()
   "Match synopsis if point is at synopsis, nil otherwise."
   (save-excursion
     (save-restriction
@@ -955,7 +966,7 @@ These are required for functions to operate with temporary buffers."
       (forward-line 0)
       (looking-at fountain-synopsis-regexp))))
 
-(defun fountain-note-p ()
+(defun fountain-match-note ()
   "Match note if point is at a note, nil otherwise."
   (save-excursion
     (save-restriction
@@ -968,7 +979,7 @@ These are required for functions to operate with temporary buffers."
             (and (looking-at fountain-note-regexp)
                  (< pos (match-end 0))))))))
 
-(defun fountain-comment-p ()
+(defun fountain-match-comment ()            ; FIXME: does not see "//" comments
   "Match comment if point is at a comment, nil otherwise."
   (save-excursion
     (save-restriction
@@ -984,28 +995,9 @@ These are required for functions to operate with temporary buffers."
             (progn (set-match-data (list beg end) t)
                    t))))))
 
-(defalias 'fountain-boneyard-p 'fountain-comment-p)
+(defalias 'fountain-match-boneyard 'fountain-match-comment)
 
-(defun fountain-page-break-p ()
-  "Return page-break if point is at a page-break, nil otherwise."
-  (save-excursion
-    (save-restriction
-      (widen)
-      (forward-line 0)
-      (looking-at fountain-page-break-regexp))))
-
-(defun fountain-tachyon-p ()
-  "Return non-nil if point is at a non-interfering element.
-These include blank lines, section headings, synopses, notes, and
-comments."
-  (or (fountain-blank-p)
-      (fountain-page-break-p)
-      (fountain-comment-p)
-      (fountain-section-heading-p) ; FIXME: what about stageplays?
-      (fountain-synopsis-p)
-      (fountain-note-p)))
-
-(defun fountain-scene-heading-p ()
+(defun fountain-match-scene-heading ()
   "Match scene heading if point is at a scene heading, nil otherwise."
   (save-excursion
     (save-restriction
@@ -1017,9 +1009,9 @@ comments."
              (or (bobp)
                  (fountain-tachyon-p)))))))
 
-(defun fountain-character-p ()
+(defun fountain-match-character ()
   "Match character if point is at character, nil otherwise."
-  (unless (fountain-scene-heading-p)
+  (unless (fountain-match-scene-heading)
     (save-excursion
       (forward-line 0)
       (and (let ((case-fold-search nil))
@@ -1035,11 +1027,11 @@ comments."
                       (unless (eobp)
                         (not (fountain-tachyon-p)))))))))))
 
-(defun fountain-dialog-p ()
+(defun fountain-match-dialog ()
   "Match dialog if point is at dialog, nil otherwise."
   (unless (or (fountain-blank-p)
-              (fountain-paren-p)
-              (fountain-note-p))
+              (fountain-match-paren)
+              (fountain-match-note))
     (save-excursion
       (save-restriction
         (widen)
@@ -1048,11 +1040,11 @@ comments."
              (save-match-data
                (unless (bobp)
                  (forward-line -1)
-                 (or (fountain-character-p)
-                     (fountain-paren-p)
-                     (fountain-dialog-p)))))))))
+                 (or (fountain-match-character)
+                     (fountain-match-paren)
+                     (fountain-match-dialog)))))))))
 
-(defun fountain-paren-p ()
+(defun fountain-match-paren ()
   "Match parenthetical if point is at a paranthetical, nil otherwise."
   (save-excursion
     (save-restriction
@@ -1062,10 +1054,10 @@ comments."
            (save-match-data
              (unless (bobp)
                (forward-line -1)
-               (or (fountain-character-p)
-                   (fountain-dialog-p))))))))
+               (or (fountain-match-character)
+                   (fountain-match-dialog))))))))
 
-(defun fountain-trans-p ()
+(defun fountain-match-trans ()
   "Match transition if point is at a transition, nil otherwise."
   (save-excursion
     (save-restriction
@@ -1084,7 +1076,7 @@ comments."
                (or (eobp)
                    (fountain-tachyon-p))))))))
 
-(defun fountain-center-p ()
+(defun fountain-match-center ()
   "Match centered text if point is at centered text, nil otherwise."
   (save-excursion
     (save-restriction
@@ -1092,19 +1084,19 @@ comments."
       (forward-line 0)
       (looking-at fountain-center-regexp))))
 
-(defun fountain-action-p ()
+(defun fountain-match-action ()
   "Match action text if point is at action, nil otherwise."
   (unless (or (fountain-tachyon-p)
-              (fountain-metadata-p)
-              (fountain-section-heading-p)
-              (fountain-scene-heading-p)
-              (fountain-character-p)
-              (fountain-dialog-p)
-              (fountain-paren-p)
-              (fountain-trans-p)
-              (fountain-center-p)
-              (fountain-synopsis-p)
-              (fountain-note-p))
+              (fountain-match-metadata)
+              (fountain-match-section-heading)
+              (fountain-match-scene-heading)
+              (fountain-match-character)
+              (fountain-match-dialog)
+              (fountain-match-paren)
+              (fountain-match-trans)
+              (fountain-match-center)
+              (fountain-match-synopsis)
+              (fountain-match-note))
     (save-excursion
       (save-restriction
         (widen)
@@ -1128,13 +1120,13 @@ Value string remains a string."
       (save-restriction
         (widen)
         (goto-char (point-min))
-        (while (fountain-metadata-p)
+        (while (fountain-match-metadata)
           (let ((key (intern (replace-regexp-in-string
                               "\s" "-"
                               (downcase (match-string 2)))))
                 (value (match-string-no-properties 3)))
             (forward-line 1)
-            (while (and (fountain-metadata-p)
+            (while (and (fountain-match-metadata)
                         (null (match-string 2)))
               (setq value (concat value (if value "\n")
                                   (match-string-no-properties 3)))
@@ -1157,7 +1149,7 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
       (save-restriction
         (widen)
         (fountain-forward-character n limit)
-        (if (fountain-character-p)
+        (if (fountain-match-character)
             (match-string-no-properties 4))))))
 
 ;; (defun fountain-get-scene-number ()
@@ -1170,7 +1162,7 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
 ;;           (let ((pos (point))
 ;;                 scn)
 ;;             (goto-char (point-min))
-;;             (unless (fountain-scene-heading-p)
+;;             (unless (fountain-match-scene-heading)
 ;;               (fountain-forward-scene 1))
 ;;             (setq scn 1)
 ;;             (while (and (< (point) pos)
@@ -1182,7 +1174,7 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
 
 ;; (defun fountain-add-scene-number (n)
 ;;   "Add scene number N to current scene heading."
-;;   (when (fountain-scene-heading-p)
+;;   (when (fountain-match-scene-heading)
 ;;     (end-of-line)
 ;;     (unless (eq (char-before) ?\s) (insert ?\s))
 ;;     (insert "#" n)))
@@ -1194,7 +1186,7 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
 ;;   (let ((job (make-progress-reporter "Adding scene numbers...")))
 ;;     (save-excursion
 ;;       (goto-char (point-min))
-;;       (unless (fountain-scene-heading-p)
+;;       (unless (fountain-match-scene-heading)
 ;;         (fountain-forward-scene 1))
 ;;       (let ((prev-scene-num "0"))
 ;;         (while (not (eobp))
@@ -1354,12 +1346,12 @@ Display a message unless SILENT."
 (defun fountain-outline-cycle (&optional arg)
   "\\<fountain-mode-map>Cycle outline visibility depending on ARG.
 
-	\\[fountain-outline-cycle]				If ARG is nil, cycle outline visibility of current
-					subtree and its children
-	\\[universal-argument] \\[fountain-outline-cycle]			If ARG is 4, cycle outline visibility of buffer
-	\\[universal-argument] \\[universal-argument] \\[fountain-outline-cycle]		If ARG is 16, show all
-	\\[universal-argument] \\[universal-argument] \\[universal-argument] \\[fountain-outline-cycle]	If ARG is 64, show outline visibility set in
-					`fountain-outline-custom-level'"
+    \\[fountain-outline-cycle]				If ARG is nil, cycle outline visibility of current
+                    subtree and its children
+    \\[universal-argument] \\[fountain-outline-cycle]			If ARG is 4, cycle outline visibility of buffer
+    \\[universal-argument] \\[universal-argument] \\[fountain-outline-cycle]		If ARG is 16, show all
+    \\[universal-argument] \\[universal-argument] \\[universal-argument] \\[fountain-outline-cycle]	If ARG is 64, show outline visibility set in
+                    `fountain-outline-custom-level'"
   (interactive "p")
   (let* ((custom-level
           (if fountain-outline-custom-level
@@ -1850,7 +1842,7 @@ Includes child elements."
   "Return an element list for matched scene heading at point.
 Includes child elements."
   (let ((heading (fountain-parse-scene-heading))
-        (num (match-string-no-properties 5)) ; FIXME: get-scene-number
+        (num (match-string-no-properties 6)) ; FIXME: get-scene-number
         (beg (point))
         (end (save-excursion
                (outline-end-of-subtree)
@@ -1874,7 +1866,7 @@ Includes child elements."
                      ((save-excursion
                         (save-match-data
                           (fountain-forward-character 1 'dialog)
-                          (and (fountain-character-p)
+                          (and (fountain-match-character)
                                (stringp (match-string 5)))))
                       'left)))
          (character (list 'character
@@ -1962,23 +1954,23 @@ Includes child elements."
 (defun fountain-parse-element ()
   "Call appropropriate element parsing function for matched element at point."
   (cond
-   ((fountain-section-heading-p)
+   ((fountain-match-section-heading)
     (fountain-parse-section))
-   ((fountain-scene-heading-p)
+   ((fountain-match-scene-heading)
     (fountain-parse-scene))
-   ((fountain-character-p)
+   ((fountain-match-character)
     (fountain-parse-dialog))
-   ((fountain-dialog-p)
+   ((fountain-match-dialog)
     (fountain-parse-lines))
-   ((fountain-paren-p)
+   ((fountain-match-paren)
     (fountain-parse-paren))
-   ((fountain-trans-p)
+   ((fountain-match-trans)
     (fountain-parse-trans))
-   ((fountain-center-p)
+   ((fountain-match-center)
     (fountain-parse-center))
-   ((fountain-synopsis-p)
+   ((fountain-match-synopsis)
     (fountain-parse-synopsis))
-   ((fountain-note-p)
+   ((fountain-match-note)
     (fountain-parse-note))
    (t
     (fountain-parse-action))))
@@ -1993,8 +1985,8 @@ moves to property value of end of element."
     (goto-char beg)
     (while (< (point) (min end (point-max)))
       (while (or (looking-at "\n*\s?\n")
-                 (fountain-comment-p)
-                 (fountain-metadata-p))
+                 (fountain-match-comment)
+                 (fountain-match-metadata))
         (goto-char (match-end 0)))
       (if (< (point) end)
           (let ((element (fountain-parse-element)))
@@ -2427,7 +2419,7 @@ strings."
         (save-excursion
           (let* ((beg (progn
                         (goto-char beg)
-                        (while (fountain-metadata-p)
+                        (while (fountain-match-metadata)
                           (forward-line 1))
                         (skip-chars-forward "\s\n\t")
                         (point)))
@@ -3092,7 +3084,7 @@ ${content}\
     (action "<Paragraph Type=\"Action\">\n<Text>${content}</Text>\n</Paragraph>\n")
     (synopsis "")
     (note "")
-    (center "<Paragraph Alignment=\"Center\" Type=\"Action\">\n<Text>${content}</Text>\n</Paragraph>\n")) 
+    (center "<Paragraph Alignment=\"Center\" Type=\"Action\">\n<Text>${content}</Text>\n</Paragraph>\n"))
   "Association list of element templates for exporting to Final Draft.
 Takes the form:
 
@@ -3166,7 +3158,7 @@ ${content}")
     (action "${forced}${content}\n\n")
     (synopsis "= ${content}\n\n")
     (note "[[ ${content} ]]\n\n")
-    (center "> ${content} <")) 
+    (center "> ${content} <"))
   "Association list of element templates for exporting to Final Draft.
 Takes the form:
 
@@ -3271,11 +3263,11 @@ If N is 0, move to beginning of scene."
          (move-fun
           (lambda ()
             (while (not (or (eq (point) (buffer-end p))
-                            (fountain-scene-heading-p)))
+                            (fountain-match-scene-heading)))
               (forward-line p)))))
     (if (/= i 0)
         (while (/= i 0)
-          (if (fountain-scene-heading-p)
+          (if (fountain-match-scene-heading)
               (forward-line p))
           (funcall move-fun)
           (setq i (- i p)))
@@ -3312,8 +3304,8 @@ If N is 0, move to beginning of scene."
   ;;       (exchange-point-and-mark))
   (push-mark)
   (fountain-forward-scene 0)
-  (if (null (or (fountain-section-heading-p)
-                (fountain-scene-heading-p)))
+  (if (not (or (fountain-match-section-heading)
+               (fountain-match-scene-heading)))
       (progn
         (goto-char (mark))
         (user-error "Before first scene heading"))
@@ -3325,15 +3317,15 @@ If N is 0, move to beginning of scene."
   "Move point to Nth scene."
   (interactive "NGoto scene: ")
   (goto-char (point-min))
-  (let ((scene (if (fountain-scene-heading-p)
-                   (or (string-to-number (match-string 5))
+  (let ((scene (if (fountain-match-scene-heading)
+                   (or (string-to-number (match-string 6))
                        1)
                  0)))
     (while (and (< scene n)
                 (not (eobp)))
       (fountain-forward-scene 1)
-      (setq scene (if (match-string 5)
-                      (string-to-number (match-string 5))
+      (setq scene (if (match-string 6)
+                      (string-to-number (match-string 6))
                     (1+ scene))))))
 
 (defun fountain-forward-character (&optional n limit)
@@ -3344,19 +3336,19 @@ halt at end of dialog."
   (let* ((i (or n 1))
          (p (if (< i 1) -1 1)))
     (while (/= i 0)
-      (if (fountain-character-p)
+      (if (fountain-match-character)
           (forward-line p))
       (while (cond ((eq limit 'scene)
                     (not (or (= (point) (buffer-end p))
-                             (fountain-character-p)
-                             (fountain-scene-heading-p))))
+                             (fountain-match-character)
+                             (fountain-match-scene-heading))))
                    ((eq limit 'dialog)
                     (and (not (= (point) (buffer-end p)))
-                         (or (fountain-dialog-p)
-                             (fountain-paren-p)
+                         (or (fountain-match-dialog)
+                             (fountain-match-paren)
                              (fountain-tachyon-p))))
                    ((not (or (= (point) (buffer-end p))
-                             (fountain-character-p)))))
+                             (fountain-match-character)))))
         (forward-line p))
       (setq i (- i p)))))
 
@@ -3466,7 +3458,7 @@ then make the changes desired."
                              (concat ".*"
                                      fountain-continued-dialog-string
                                      "$")))
-                       (fountain-character-p)
+                       (fountain-match-character)
                        (string= (fountain-get-character 0)
                                 (fountain-get-character -1 'scene)))
               (re-search-forward "\s*$" (line-end-position) t)
@@ -3585,7 +3577,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :invisible t)))
     ("scene-heading"
      (lambda (limit)
-       (fountain-match-element 'fountain-scene-heading-p limit))
+       (fountain-match-element 'fountain-match-scene-heading limit))
      ((:level 2 :subexp 0)
       (:level 2 :subexp 2 :face fountain-comment
               ;; :invisible fountain-syntax-chars
@@ -3596,7 +3588,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :laxmatch t)))
     ("character"
      (lambda (limit)
-       (fountain-match-element 'fountain-character-p limit))
+       (fountain-match-element 'fountain-match-character limit))
      ((:level 3 :subexp 0
               :override append)
       (:level 3 :subexp 2
@@ -3608,17 +3600,17 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :laxmatch t)))
     ("dialog"
      (lambda (limit)
-       (fountain-match-element 'fountain-dialog-p limit))
+       (fountain-match-element 'fountain-match-dialog limit))
      ((:level 3 :subexp 0
               :override append)))
     ("paren"
      (lambda (limit)
-       (fountain-match-element 'fountain-paren-p limit))
+       (fountain-match-element 'fountain-match-paren limit))
      ((:level 3 :subexp 0
               :override append)))
     ("trans"
      (lambda (limit)
-       (fountain-match-element 'fountain-trans-p limit))
+       (fountain-match-element 'fountain-match-trans limit))
      ((:level 3 :subexp 0)
       (:level 2 :subexp 2 :face fountain-comment
               :invisible fountain-syntax-chars
@@ -3652,7 +3644,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
      ((:level 2 :subexp 0 :face fountain-page-break)))
     ("metadata"
      (lambda (limit)
-       (fountain-match-element 'fountain-metadata-p limit))
+       (fountain-match-element 'fountain-match-metadata limit))
      ((:level 2 :subexp 0 :face fountain-metadata-key
               :invisible t
               :laxmatch t)
@@ -3662,7 +3654,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :laxmatch t)))
     ("action"
      (lambda (limit)
-       (fountain-match-element 'fountain-action-p limit))
+       (fountain-match-element 'fountain-match-action limit))
      ((:level 1 :subexp 0)))
     (nil
      ,fountain-nbsp-regexp
