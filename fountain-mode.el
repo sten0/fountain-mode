@@ -3842,6 +3842,7 @@ keywords suitable for Font Lock."
     (define-key map (kbd "C-c C-z") #'fountain-insert-note)
     (define-key map (kbd "C-c C-a") #'fountain-insert-synopsis)
     (define-key map (kbd "C-c C-x i") #'auto-insert)
+    (define-key map (kbd "C-c C-x RET") #'fountain-insert-page-break)
     ;; (define-key map (kbd "C-c C-x #") #'fountain-add-scene-nums)
     (define-key map (kbd "C-c C-x f") #'fountain-set-font-lock-decoration)
     ;; navigation commands
