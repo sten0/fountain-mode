@@ -1894,6 +1894,11 @@ NUM is an optional string to force the page number."
     ;; Finally return to where we were.
     (goto-char pos)))
 
+(defun fountain-lock-pages ()
+  (interactive)
+  (if (y-or-n-p "Are you sure you want to lock pages?")
+      (ignore)))
+
 
 ;;; Parsing
 
