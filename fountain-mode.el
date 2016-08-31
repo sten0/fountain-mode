@@ -2187,12 +2187,14 @@ Options are: bold, double-space, underline."
               (const :tag "Underlined" underline))
   :group 'fountain-export)
 
-(defcustom fountain-export-more-dialog-string
+(defcustom fountain-more-dialog-string
   "(MORE)"
   "String to append to dialog when breaking across pages.
 Parentheses are not automatically added."
   :type 'string
-  :group 'fountain-export)
+  :group 'fountain)
+(define-obsolete-variable-alias 'fountain-export-more-dialog-string
+  'fountain-more-dialog-string "2.3.0")
 
 ;; (defcustom fountain-export-convert-quotes
 ;;   nil
