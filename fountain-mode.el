@@ -4,7 +4,7 @@
 
 ;; Author: Paul Rankin <hello@paulwrankin.com>
 ;; Keywords: wp
-;; Version: 2.2.1
+;; Version: 2.2.2
 ;; Package-Requires: ((emacs "24.4"))
 ;; URL: https://github.com/rnkn/fountain-mode
 
@@ -121,7 +121,7 @@
 ;;; Code:
 
 (defconst fountain-version
-  "2.2.1")
+  "2.2.2")
 
 
 ;;; Requirements
@@ -616,13 +616,10 @@ Used by `fountain-outline-cycle'.")
   "Integer representing subtree outline cycling status.
 Used by `fountain-outline-cycle'.")
 
-(defvar-local fountain-parse-job
+(defvar-local fountain-new-page
   nil
-  "Buffer parsing progress reporter.")
-
-(defvar-local fountain-export-job
-  nil
-  "Buffer export progress reporter.")
+  "Non-nil if next element starts a new page.
+Used by `fountain-parse-region'")
 
 
 ;;;; Regular Expression Variables
@@ -712,7 +709,7 @@ Requires `fountain-match-paren' for preceding character or dialog.")
   "Regular expression for matching action.")
 
 (defconst fountain-page-break-regexp
-  "^[\s\t]*=\\{3,\\}.*"
+  "^[\s\t]*\\(=\\{3,\\}\\)[\s\t]*\\([a-z0-9\\.-]+\\)?.*$"
   "Regular expression for matching page breaks.")
 
 (defconst fountain-script-end-regexp
@@ -809,6 +806,11 @@ bold-italic delimiters together, e.g.
 (defface fountain-page-break
   '((t (:inherit fountain-comment)))
   "Default face for page breaks."
+  :group 'fountain-faces)
+
+(defface fountain-page-number
+  '((t (:inherit font-lock-function-name-face)))
+  "Default face for page numbers."
   :group 'fountain-faces)
 
 (defface fountain-scene-heading
@@ -953,6 +955,13 @@ comments."
                  (forward-line -1)
                  (fountain-match-metadata)))))))
 
+(defun fountain-match-page-break  ()
+  (save-excursion
+    (save-restriction
+      (widen)
+      (forward-line 0)
+      (looking-at fountain-page-break-regexp))))
+
 (defun fountain-match-section-heading ()
   "Match section heading if point is at section heading, nil otherwise."
   (save-excursion
@@ -1017,7 +1026,8 @@ comments."
   (unless (fountain-match-scene-heading)
     (save-excursion
       (forward-line 0)
-      (and (let ((case-fold-search nil))
+      (and (not (looking-at fountain-forced-action-mark-regexp))
+           (let ((case-fold-search nil))
              (looking-at fountain-character-regexp))
            (save-match-data
              (save-restriction
@@ -1236,7 +1246,18 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
           (t 2))))
 
 
-;;;; Text Functions
+;;; Text Functions
+
+(defcustom fountain-auto-upcase-scene-headings
+  t
+  "If non-nil, automatically upcase lines matching `fountain-scene-heading-regexp'."
+  :type 'boolean
+  :group 'fountain)
+
+(defun fountain-auto-upcase ()
+  (if (and fountain-auto-upcase-scene-headings
+           (fountain-match-scene-heading))
+      (upcase-region (line-beginning-position) (point))))
 
 (defun fountain-delete-comments-in-region (beg end)
   "Delete comments in region between BEG and END."
@@ -1270,6 +1291,14 @@ If LIMIT is 'scene, halt at next scene heading. If LIMIT is
 (defalias 'fountain-outline-up 'outline-up-heading)
 (defalias 'fountain-outline-mark 'outline-mark-subtree)
 
+(when (version< emacs-version "25")
+  (defalias 'outline-show-all 'show-all)
+  (defalias 'outline-show-entry 'show-entry)
+  (defalias 'outline-show-subtree 'show-subtree)
+  (defalias 'outline-show-children 'show-children)
+  (defalias 'outline-hide-subtree 'hide-subtree)
+  (defalias 'outline-hide-sublevels 'hide-sublevels))
+
 (defcustom fountain-patch-emacs-bugs
   t
   "If non-nil, attempt to patch known bugs in Emacs <= 24.4.
@@ -1280,9 +1309,10 @@ See function `fountain-patch-emacs-bugs'."
 (defun fountain-outline-invisible-p (&optional pos)
   "Override `outline-invisible-p' for correct return.
 
-Return non-nil only if the character after POS or `point' has
-invisible text property `eq' to 'outline. See
-<http://debbugs.gnu.org/24073>."
+Non-nil if the character after POS has outline invisible property.
+If POS is nil, use `point' instead.
+
+See <http://debbugs.gnu.org/24073>."
   (eq (get-char-property (or pos (point)) 'invisible) 'outline))
 
 (defun fountain-patch-emacs-bugs ()
@@ -1360,7 +1390,7 @@ property `eq' to 'outline. See <http://debbugs.gnu.org/24073>."
     (insert (delete-and-extract-region beg end))
     (goto-char insert-point)
     (if folded
-        (hide-subtree))
+        (outline-hide-subtree))
     ;; remove temp newline
     (if hanging-line
         (save-excursion
@@ -1377,13 +1407,13 @@ property `eq' to 'outline. See <http://debbugs.gnu.org/24073>."
   "Set outline visibilty to outline level N.
 Display a message unless SILENT."
   (cond ((= n 0)
-         (show-all)
+         (outline-show-all)
          (unless silent (message "Showing all")))
         ((= n 6)
-         (hide-sublevels n)
+         (outline-hide-sublevels n)
          (unless silent (message "Showing scene headings")))
         (t
-         (hide-sublevels n)
+         (outline-hide-sublevels n)
          (unless silent (message "Showing level %s headings" n))))
   (setq fountain-outline-cycle n))
 
@@ -1397,32 +1427,31 @@ Display a message unless SILENT."
     \\[universal-argument] \\[universal-argument] \\[universal-argument] \\[fountain-outline-cycle]	If ARG is 64, show outline visibility set in
                     `fountain-outline-custom-level'"
   (interactive "p")
-  (let* ((custom-level
-          (if fountain-outline-custom-level
-              (save-excursion
-                (goto-char (point-min))
-                (let (found)
-                  (while (and (not found)
-                              (outline-next-heading))
-                    (if (= (funcall outline-level)
-                           fountain-outline-custom-level)
-                        (setq found t)))
-                  (if found fountain-outline-custom-level)))))
-         (highest-level
-          (save-excursion
-            (goto-char (point-max))
-            (outline-back-to-heading t)
-            (let ((level (funcall outline-level)))
-              (while (and (not (bobp))
-                          (< 1 level))
-                (outline-up-heading 1 t)
-                (unless (bobp)
-                  (setq level (funcall outline-level))))
-              level))))
+  (let ((custom-level
+         (if fountain-outline-custom-level
+             (save-excursion
+               (goto-char (point-min))
+               (let (found)
+                 (while (and (not found)
+                             (outline-next-heading))
+                   (if (= (funcall outline-level)
+                          fountain-outline-custom-level)
+                       (setq found t)))
+                 (if found fountain-outline-custom-level)))))
+        (highest-level
+         (save-excursion
+           (goto-char (point-max))
+           (outline-back-to-heading t)
+           (let ((level (funcall outline-level)))
+             (while (and (not (bobp))
+                         (< 1 level))
+               (outline-up-heading 1 t)
+               (unless (bobp)
+                 (setq level (funcall outline-level))))
+             level))))
     (cond ((eq arg 4)
            (cond
-            ((and custom-level
-                  (= fountain-outline-cycle 1))
+            ((and (= fountain-outline-cycle 1) custom-level)
              (fountain-outline-hide-level custom-level))
             ((< 0 fountain-outline-cycle 6)
              (fountain-outline-hide-level 6))
@@ -1433,11 +1462,10 @@ Display a message unless SILENT."
             (t
              (fountain-outline-hide-level highest-level))))
           ((eq arg 16)
-           (show-all)
+           (outline-show-all)
            (message "Showing all")
            (setq fountain-outline-cycle 0))
-          ((and custom-level
-                (eq arg 64))
+          ((and (eq arg 64) custom-level)
            (fountain-outline-hide-level custom-level))
           (t
            (save-excursion
@@ -1470,17 +1498,17 @@ Display a message unless SILENT."
                  (setq fountain-outline-cycle-subtree 0))
                 ((and (<= eos eol)
                       children)
-                 (show-entry)
-                 (show-children)
+                 (outline-show-entry)
+                 (outline-show-children)
                  (message "Showing headings")
                  (setq fountain-outline-cycle-subtree 2))
                 ((or (<= eos eol)
                      (= fountain-outline-cycle-subtree 2))
-                 (show-subtree)
+                 (outline-show-subtree)
                  (message "Showing contents")
                  (setq fountain-outline-cycle-subtree 3))
                 (t
-                 (hide-subtree)
+                 (outline-hide-subtree)
                  (message "Hiding contents")
                  (setq fountain-outline-cycle-subtree 1)))))))))
 
@@ -1490,7 +1518,7 @@ Display a message unless SILENT."
 Calls `fountain-outline-cycle' with argument 4 to cycle buffer
 outline visibility through the following states:
 
-    1:  Top-level section headins
+    1:  Top-level section headings
     2:  Value of `fountain-outline-custom-level'
     3:  All section headings and scene headings
     4:  Everything"
@@ -1902,18 +1930,17 @@ NUM is an optional string to force the page number."
 
 ;;; Parsing
 
-(defun fountain-parse-section-heading ()
-  "Return an element list for matched section heading at point."
-  (list 'section-heading
-        (list 'begin (match-beginning 0)
-              'end (match-end 0)
-              'level (funcall outline-level))
-        (match-string-no-properties 3)))
-
-(defun fountain-parse-section ()
+(defun fountain-parse-section (&optional job)
   "Return an element list for matched section heading at point.
 Includes child elements."
-  (let ((heading (fountain-parse-section-heading))
+  (let ((heading
+         (list 'section-heading
+               (list 'begin (match-beginning 0)
+                     'end (match-end 0)
+                     'level (funcall outline-level)
+                     'page-break (prog1 fountain-new-page
+                                   (setq fountain-new-page nil)))
+               (match-string-no-properties 3)))
         (level (funcall outline-level))
         (beg (point))
         (end (save-excursion
@@ -1923,28 +1950,27 @@ Includes child elements."
                (point))))
     (save-excursion
       (goto-char (plist-get (nth 1 heading) 'end))
-      (let ((contents (fountain-parse-region (point) end)))
+      (let ((contents (fountain-parse-region (point) end job)))
         (list 'section
               (list 'begin beg
                     'end end
                     'level level)
               (cons heading contents))))))
 
-(defun fountain-parse-scene-heading ()
-  "Return an element list for matched scene heading at point."
-  (list 'scene-heading
-        (list 'begin (match-beginning 0)
-              'end (match-end 0)
-              'scene-number (match-string-no-properties 5)
-              'forced (stringp (match-string-no-properties 2)))
-        (match-string-no-properties 3)))
-
-(defun fountain-parse-scene ()
+(defun fountain-parse-scene (&optional job)
   "Return an element list for matched scene heading at point.
 Includes child elements."
-  (let ((heading (fountain-parse-scene-heading))
+  (let ((heading
+         (list 'scene-heading
+               (list 'begin (match-beginning 0)
+                     'end (match-end 0)
+                     'scene-number (match-string-no-properties 6)
+                     'forced (stringp (match-string-no-properties 2))
+                     'page-break (prog1 fountain-new-page
+                                   (setq fountain-new-page nil)))
+               (match-string-no-properties 3)))
         (num (match-string-no-properties 6)) ; FIXME: get-scene-number
-        (beg (point))
+        (beg (match-beginning 0))
         (end (save-excursion
                (outline-end-of-subtree)
                (unless (eobp)
@@ -1952,14 +1978,14 @@ Includes child elements."
                (point))))
     (save-excursion
       (goto-char (plist-get (nth 1 heading) 'end))
-      (let ((contents (fountain-parse-region (point) end)))
+      (let ((contents (fountain-parse-region (point) end job)))
         (list 'scene
               (list 'begin beg
                     'end end
                     'scene-number num)
               (cons heading contents))))))
 
-(defun fountain-parse-dialog ()
+(defun fountain-parse-dialog (&optional job)
   "Return an element list for matched character at point.
 Includes child elements."
   (let* ((dual (cond ((stringp (match-string 5))
@@ -1974,10 +2000,12 @@ Includes child elements."
                           (list 'begin (match-beginning 0)
                                 'end (match-end 0)
                                 'forced (stringp (match-string-no-properties 2))
-                                'dual dual)
+                                'dual dual
+                                'page-break (prog1 fountain-new-page
+                                              (setq fountain-new-page nil)))
                           (match-string-no-properties 3)))
          (name (match-string-no-properties 4))
-         (beg (point))
+         (beg (match-beginning 0))
          (end (save-excursion
                 (if (re-search-forward "^\s?$" nil 'move)
                     (match-beginning 0)
@@ -1986,7 +2014,7 @@ Includes child elements."
                          (fountain-get-character -1 'scene))))
     (save-excursion
       (goto-char (plist-get (nth 1 character) 'end))
-      (let ((contents (fountain-parse-region (point) end)))
+      (let ((contents (fountain-parse-region (point) end job)))
         (list 'dialog
               (list 'begin beg
                     'end end
@@ -1999,14 +2027,18 @@ Includes child elements."
   "Return an element list for matched dialogue at point."
   (list 'lines
         (list 'begin (match-beginning 0)
-              'end (match-end 0))
+              'end (match-end 0)
+              'page-break (prog1 fountain-new-page
+                            (setq fountain-new-page nil)))
         (match-string-no-properties 3)))
 
 (defun fountain-parse-paren ()
   "Return an element list for matched parenthetical at point."
   (list 'paren
         (list 'begin (match-beginning 0)
-              'end (match-end 0))
+              'end (match-end 0)
+              'page-break (prog1 fountain-new-page
+                            (setq fountain-new-page nil)))
         (match-string-no-properties 3)))
 
 (defun fountain-parse-trans ()
@@ -2014,15 +2046,26 @@ Includes child elements."
   (list 'trans
         (list 'begin (match-beginning 0)
               'end (match-end 0)
-              'forced (stringp (match-string-no-properties 2)))
+              'forced (stringp (match-string-no-properties 2))
+              'page-break (prog1 fountain-new-page
+                            (setq fountain-new-page nil)))
         (match-string-no-properties 3)))
 
 (defun fountain-parse-center ()
   "Return an element list for matched center text at point."
   (list 'center
         (list 'begin (match-beginning 0)
-              'end (match-end 0))
+              'end (match-end 0)
+              'page-break (prog1 fountain-new-page
+                            (setq fountain-new-page nil)))
         (match-string-no-properties 3)))
+
+(defun fountain-parse-page-break ()
+  "Return an element list for matched page break at point."
+  (list 'page-break
+        (list 'begin (match-beginning 0)
+              'end (match-end 0)
+              'page-break (match-string-no-properties 2))))
 
 (defun fountain-parse-synopsis ()
   "Return an element list for matched synopsis at point."
@@ -2040,7 +2083,7 @@ Includes child elements."
 
 (defun fountain-parse-action ()
   "Return an element list for action at point."
-  (let ((beg (point))
+  (let ((beg (line-beginning-position))
         (end (save-excursion
                (while (not (or (fountain-tachyon-p)
                                (eobp)))
@@ -2049,18 +2092,24 @@ Includes child elements."
                (point))))
     (list 'action
           (list 'begin beg
-                'end end)
-          (buffer-substring-no-properties beg end)))) ; FIXME: remove s
+                'end end
+                'page-break (prog1 fountain-new-page
+                              (setq fountain-new-page nil)))
+          (buffer-substring-no-properties
+           (if (string-match fountain-forced-action-mark-regexp
+                             (buffer-substring beg end))
+               (1+ beg) beg)
+           end))))
 
-(defun fountain-parse-element ()
+(defun fountain-parse-element (&optional job)
   "Call appropropriate element parsing function for matched element at point."
   (cond
    ((fountain-match-section-heading)
-    (fountain-parse-section))
+    (fountain-parse-section job))
    ((fountain-match-scene-heading)
-    (fountain-parse-scene))
+    (fountain-parse-scene job))
    ((fountain-match-character)
-    (fountain-parse-dialog))
+    (fountain-parse-dialog job))
    ((fountain-match-dialog)
     (fountain-parse-lines))
    ((fountain-match-paren)
@@ -2069,6 +2118,8 @@ Includes child elements."
     (fountain-parse-trans))
    ((fountain-match-center)
     (fountain-parse-center))
+   ((fountain-match-page-break)
+    (fountain-parse-page-break))
    ((fountain-match-synopsis)
     (fountain-parse-synopsis))
    ((fountain-match-note)
@@ -2076,8 +2127,9 @@ Includes child elements."
    (t
     (fountain-parse-action))))
 
-(defun fountain-parse-region (beg end)
-  "Return a list of parsed element lists in region between BEG and END.
+(defun fountain-parse-region (beg end &optional job)
+  "Return a list of parsed element lists in region between BEG and END
+Update progress of JOB.
 
 Ignores blank lines, comments and metadata. Calls
 `fountain-parse-element' and adds element list to list, then
@@ -2090,18 +2142,21 @@ moves to property value of end of element."
                  (fountain-match-metadata))
         (goto-char (match-end 0)))
       (if (< (point) end)
-          (let ((element (fountain-parse-element)))
-            (setq list (cons element list))
+          (let ((element (fountain-parse-element job)))
+            (push element list)
             (goto-char (plist-get (nth 1 element) 'end))
-            (progress-reporter-update fountain-parse-job))))
+            (if (eq (car element) 'page-break)
+                (setq fountain-new-page t))
+            (if job (progress-reporter-update job)))))
     (reverse list)))
 
 
 ;;; General Export
 
 (defcustom fountain-export-include-elements-alist
-  '(("screenplay" scene-heading action character paren lines trans center)
-    ("stageplay" section-heading scene-heading action character paren lines trans center))
+  '(("screenplay" scene-heading action character paren lines trans center page-break)
+    ("teleplay" section-heading scene-heading action character paren lines trans center page-break)
+    ("stageplay" section-heading scene-heading action character paren lines trans center page-break))
   "Association list of elements to include when exporting.
 Note that comments (boneyard) are never included."
   :type '(alist :key-type (string :tag "Format")
@@ -2114,6 +2169,7 @@ Note that comments (boneyard) are never included."
                                  (const :tag "Dialogue" lines)
                                  (const :tag "Transitions" trans)
                                  (const :tag "Center Text" center)
+                                 (const :tag "Page Breaks" page-break)
                                  (const :tag "Synopses" synopsis)
                                  (const :tag "Notes" note)))
   :group 'fountain-export)
@@ -2285,7 +2341,7 @@ Takes the form:
     (FORMAT KEYWORD PROPERTY)")
 
 (define-widget 'fountain-element-list-type 'lazy
-  "Doc"
+  "Customize widget for Fountain templates."
   :offset 4
   :type '(list
           (group (const :tag "Document" document)
@@ -2310,7 +2366,7 @@ Takes the form:
                  (choice string (const nil)))
           (group (const :tag "Action" action)
                  (choice string (const nil)))
-          (group (const :tag "Page Break" break)
+          (group (const :tag "Page Break" page-break)
                  (choice string (const nil)))
           (group (const :tag "Synopsis" synopsis)
                  (choice string (const nil)))
@@ -2382,6 +2438,10 @@ If TYPE corresponds to a FORMAT that corresponds to a template in
                                               (fountain-export-format-string fountain-export-title-template format))
                                         (cons "contact-template"
                                               (fountain-export-format-string fountain-export-contact-template format))
+                                        (cons "page-break"
+                                              (if (and (plist-get plist 'page-break)
+                                                       (eq format 'fdx))
+                                                  "\sStartsNewPage=\"Yes\""))
                                         (cons "forced"
                                               (if (and (plist-get plist 'forced)
                                                        (eq format 'fountain))
@@ -2390,11 +2450,11 @@ If TYPE corresponds to a FORMAT that corresponds to a template in
                                                         ((eq type 'character)
                                                          "@")
                                                         ((eq type 'trans)
-                                                         "> "))))
+                                                         ">\s"))))
                                         (cons "dual-dialog"
                                               (cond ((and (eq format 'fountain)
                                                           (eq (plist-get plist 'dual) 'right))
-                                                     " ^")
+                                                     "\s^")
                                                     ((eq format 'html)
                                                      (let ((opt (plist-get plist 'dual)))
                                                        (cond ((eq opt 'left)
@@ -2447,7 +2507,7 @@ If TYPE corresponds to a FORMAT that corresponds to a template in
           (buffer-string))
       string)))
 
-(defun fountain-export-format-element (element format includes)
+(defun fountain-export-format-element (element format includes &optional job)
   "Return a formatted string from ELEMENT according to FORMAT.
 Only return format string if INCLUDES contains the car of ELEMENT.
 
@@ -2459,19 +2519,19 @@ recursively call self, concatenating the resulting strings."
         (plist (nth 1 element))
         (tree (nth 2 element)))
     (cond ((and (stringp tree)
-                (member type includes))
-           (progress-reporter-update fountain-export-job)
-           (fountain-export-format-template
-            type plist (fountain-export-format-string tree format) format))
+                (memq type includes))
+           (prog1
+               (fountain-export-format-template
+                type plist (fountain-export-format-string tree format) format)
+             (if job (progress-reporter-update job))))
           ((listp tree)
            (let (string)
-             (dolist (element tree
-                              (fountain-export-format-template
-                               type plist string format))
+             (dolist (element tree (fountain-export-format-template
+                                    type plist string format))
                (setq string
                      (concat string
                              (fountain-export-format-element
-                              element format includes)))))))))
+                              element format includes job)))))))))
 
 (defun fountain-export-region (beg end format &optional snippet)
   "Return an export string of region between BEG and END in FORMAT.
@@ -2487,8 +2547,7 @@ If exporting a standalone document, call
 included elements, otherwise walk the element tree calling
 `fountain-export-format-element' and concatenate the resulting
 strings."
-  (let* ((level fountain-outline-cycle)
-         (metadata (fountain-read-metadata))
+  (let* ((metadata (fountain-read-metadata))
          (includes
           (cdr (or (assoc (or (plist-get metadata 'format)
                               "screenplay")
@@ -2496,40 +2555,36 @@ strings."
                    (car fountain-export-include-elements-alist))))
          (standalone (unless snippet fountain-export-standalone)))
     (fountain-outline-hide-level 0 t)
-    (unwind-protect
-        (save-excursion
-          (let* ((beg (progn
-                        (goto-char beg)
-                        (while (fountain-match-metadata)
-                          (forward-line 1))
-                        (skip-chars-forward "\s\n\t")
-                        (point)))
-                 (end (if (re-search-forward fountain-script-end-regexp end t)
-                          (match-beginning 0)
-                        end))
-                 (string (buffer-substring-no-properties beg end))
-                 tree)
-            (with-temp-buffer
-              (insert string)
-              (fountain-init-vars)
-              (fountain-delete-comments-in-region (point-min) (point-max))
-              (setq fountain-parse-job
-                    (make-progress-reporter "Parsing..."))
-              (setq tree (fountain-parse-region (point-min) (point-max)))
-              (progress-reporter-done fountain-parse-job)
-              (setq fountain-export-job
-                    (make-progress-reporter "Exporting..."))
-              (prog1
-                  (if standalone
-                      (fountain-export-format-element
-                       (list 'document metadata tree) format includes)
-                    (let (string)
-                      (dolist (element tree string)
-                        (setq string
-                              (concat string (fountain-export-format-element
-                                              element format includes)))))) ; FIXME: DRY
-                (progress-reporter-done fountain-export-job)))))
-      (fountain-outline-hide-level level t))))
+    (save-excursion
+      (let* ((beg (progn
+                    (goto-char beg)
+                    (while (fountain-match-metadata)
+                      (forward-line 1))
+                    (skip-chars-forward "\s\n\t")
+                    (point)))
+             (end (if (re-search-forward fountain-script-end-regexp end t)
+                      (match-beginning 0)
+                    end))
+             (string (buffer-substring-no-properties beg end))
+             parse-job export-job tree)
+        (with-temp-buffer
+          (fountain-init-vars)
+          (insert string)
+          (fountain-delete-comments-in-region (point-min) (point-max))
+          (setq parse-job (make-progress-reporter "Parsing...")
+                tree (fountain-parse-region (point-min) (point-max) parse-job))
+          (progress-reporter-done parse-job)
+          (setq export-job (make-progress-reporter "Exporting..."))
+          (prog1
+              (if standalone
+                  (fountain-export-format-element
+                   (list 'document metadata tree) format includes export-job)
+                (let (string)
+                  (dolist (element tree string)
+                    (setq string
+                          (concat string (fountain-export-format-element
+                                          element format includes export-job)))))) ; FIXME: DRY
+            (progress-reporter-done export-job)))))))
 
 (defun fountain-export-buffer (format &optional snippet buffer)
   "Export current buffer or BUFFER to export format FORMAT.
@@ -2782,7 +2837,7 @@ otherwise kill destination buffer."
      (lines "<p class=\"lines\">{{content}}</p>\n")
      (trans "<p class=\"trans\">{{content}}</p>\n")
      (action "<p class=\"action\">{{content}}</p>\n")
-     (break "<br>\n")
+     (page-break "<hr>\n")
      (synopsis "<p class=\"synopsis\">{{content}}</p>\n")
      (note "<p class=\"note\">{{content}}</p>\n")
      (center "<p class=\"center\">{{content}}</p>\n"))
@@ -3063,7 +3118,7 @@ character codes, then format replacement is made."
     (lines "{{content}}\n")
     (trans "\\trans{{{content}}}\n\n")
     (action "{{content}}\n\n")
-    (break "\\clearpage\n\n")
+    (page-break "\\clearpage\n\n")
     (synopsis "")
     (note "")
     (center "\\centertext{{{content}}}\n\n"))
@@ -3149,17 +3204,17 @@ character codes, then format replacement is made."
     (section nil)
     (section-heading nil)
     (scene nil)
-    (scene-heading "<Paragraph Number=\"{{scene-number}}\" Type=\"Scene Heading\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (scene-heading "<Paragraph Number=\"{{scene-number}}\" Type=\"Scene Heading\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
     (dialog nil)
-    (character "<Paragraph Type=\"Character\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
-    (paren "<Paragraph Type=\"Parenthetical\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
-    (lines "<Paragraph Type=\"Dialogue\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
-    (trans "<Paragraph Type=\"Transition\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
-    (action "<Paragraph Type=\"Action\">\n<Text>{{content}}</Text>\n</Paragraph>\n")
-    (break "<Paragraph StartsNewPage=\"Yes\">\n</Paragraph>\n")
+    (character "<Paragraph Type=\"Character\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (paren "<Paragraph Type=\"Parenthetical\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (lines "<Paragraph Type=\"Dialogue\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (trans "<Paragraph Type=\"Transition\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (action "<Paragraph Type=\"Action\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n")
+    (page-break "")
     (synopsis "")
     (note "")
-    (center "<Paragraph Alignment=\"Center\" Type=\"Action\">\n<Text>{{content}}</Text>\n</Paragraph>\n"))
+    (center "<Paragraph Alignment=\"Center\" Type=\"Action\"{{page-break}}>\n<Text>{{content}}</Text>\n</Paragraph>\n"))
   "Association list of element templates for exporting to Final Draft.
 Takes the form:
 
@@ -3231,11 +3286,11 @@ contact:
     (lines "{{content}}\n")
     (trans "{{forced}}{{content}}\n\n")
     (action "{{forced}}{{content}}\n\n")
-    (break "===\n\n")
+    (page-break "===\n\n")
     (synopsis "= {{content}}\n\n")
     (note "[[ {{content}} ]]\n\n")
     (center "> {{content}} <"))
-  "Association list of element templates for exporting to Final Draft.
+  "Association list of element templates for exporting to Fountain.
 Takes the form:
 
     ((ELEMENT TEMPLATE) ...)
@@ -3308,9 +3363,10 @@ If prefixed with ARG, insert `.' at beginning of line to force
 a scene heading."
   (interactive "P")
   (if arg
-      (save-excursion
-        (forward-line 0)
-        (insert-char ?.)))
+      (unless (fountain-match-scene-heading)
+        (save-excursion
+          (forward-line 0)
+          (insert-char ?.))))
   (upcase-region (line-beginning-position) (point))
   (insert-char ?\n))
 
@@ -3356,12 +3412,12 @@ If N is 0, move to beginning of scene."
   (let ((i (or n 1)))
     (fountain-forward-scene (- i))))
 
-(defun fountain-beginning-of-scene ()
+(defun fountain-beginning-of-scene ()   ; FIXME: needed?
   "Move point to beginning of current scene."
   (interactive "^")
   (fountain-forward-scene 0))
 
-(defun fountain-end-of-scene ()
+(defun fountain-end-of-scene ()         ; FIXME: needed?
   "Move point to end of current scene."
   (interactive "^")
   (fountain-forward-scene 1)
@@ -3386,7 +3442,7 @@ If N is 0, move to beginning of scene."
         (goto-char (mark))
         (user-error "Before first scene heading"))
     (push-mark)
-    (fountain-outline-next 1)
+    (fountain-forward-scene 1)
     (exchange-point-and-mark)))
 
 (defun fountain-goto-scene (n)          ; FIXME: scene numbering
@@ -3409,9 +3465,10 @@ If N is 0, move to beginning of scene."
 If LIMIT is 'scene, halt at end of scene. If LIMIT is 'dialog,
 halt at end of dialog."
   (interactive "^p")
-  (let* ((i (or n 1))
-         (p (if (< i 1) -1 1)))
-    (while (/= i 0)
+  (let (p)
+    (setq n (or n 1)
+          p (if (< n 1) -1 1))
+    (while (/= n 0)
       (if (fountain-match-character)
           (forward-line p))
       (while (cond ((eq limit 'scene)
@@ -3426,13 +3483,13 @@ halt at end of dialog."
                    ((not (or (= (point) (buffer-end p))
                              (fountain-match-character)))))
         (forward-line p))
-      (setq i (- i p)))))
+      (setq n (- n p)))))
 
 (defun fountain-backward-character (&optional n)
   "Move backward N character (foward if N is negative)."
   (interactive "^p")
-  (let ((i (or n 1)))
-    (fountain-forward-character (- i))))
+  (setq n (or n 1))
+  (fountain-forward-character (- n)))
 
 (defun fountain-insert-synopsis ()
   "Insert synopsis below scene heading of current scene."
@@ -3511,14 +3568,14 @@ then make the changes desired."
                           ((use-region-p)
                            (region-beginning))
                           (t
-                           (fountain-beginning-of-scene)
+                           (fountain-forward-scene 0)
                            (point))))
         (set-marker end
                     (cond (arg (point-max))
                           ((use-region-p)
                            (region-end))
                           (t
-                           (fountain-end-of-scene)
+                           (fountain-forward-scene 1)
                            (point))))
         ;; delete all matches in region
         (goto-char start)
@@ -3658,7 +3715,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :invisible fountain-syntax-chars
               :override t
               :laxmatch t)
-      (:level 1 :subexp 4
+      (:level 2 :subexp 4
               :display (- right-margin fountain-align-scene-number)
               :laxmatch t)))
     ("character"
@@ -3716,7 +3773,10 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
               :override t)))
     ("page-break"
      ,fountain-page-break-regexp
-     ((:level 2 :subexp 0 :face fountain-page-break)))
+     ((:level 2 :subexp 0 :face fountain-page-break)
+      (:level 2 :subexp 2 :face fountain-page-number
+              :override t
+              :laxmatch t)))
     ("metadata"
      (lambda (limit)
        (fountain-match-element 'fountain-match-metadata limit))
@@ -4052,6 +4112,11 @@ otherwise, if ELT is provided, toggle the presence of ELT in VAR."
       'fountain-align-elements)
      :style toggle
      :selected fountain-align-elements]
+    ["Auto-Upcase Scene Headings"
+     (fountain-toggle-custom-variable
+      'fountain-auto-upcase-scene-headings)
+     :style toggle
+     :selected fountain-auto-upcase-scene-headings]
     ["Add Continued Dialog"
      (fountain-toggle-custom-variable
       'fountain-add-continued-dialog)
@@ -4129,6 +4194,8 @@ otherwise, if ELT is provided, toggle the presence of ELT in VAR."
     (if (stringp n)
         (setq-local fountain-outline-startup-level
                     (min (string-to-number n) 6))))
+  (add-hook 'post-self-insert-hook
+            #'fountain-auto-upcase t t)
   (add-hook 'font-lock-extend-region-functions
             #'fountain-font-lock-extend-region t t)
   (add-hook 'after-save-hook
