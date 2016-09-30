@@ -1617,6 +1617,215 @@ The car will set `left-margin' and cdr `fill-column'."
                (integer :tag "Width"))
   :group 'fountain-fill)
 
+(defun fountain-export-include-element (element)
+  (memq element
+        (cdr (or (assoc (or (plist-get (fountain-read-metadata) 'format)
+                            "screenplay")
+                        fountain-export-include-elements-alist)
+                 (car fountain-export-include-elements-alist)))))
+
+
+(defun fountain-fill-metadata (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (while (fountain-match-metadata)
+                 (forward-line 1))
+               (skip-chars-forward "\n\s\t")
+               (point))))
+    (if destructive
+        (delete-region beg end)
+      (put-text-property beg end 'invisible t))))
+
+(defun fountain-fill-section-heading (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (skip-chars-forward "\n\s\t")
+               (point))))
+    (if (memq 'section-heading includes)
+        (let ((left-margin (if destructive
+                               (car fountain-fill-section-heading)
+                             0))
+              (fill-column (cdr fountain-fill-section-heading)))
+          (if destructive
+              (delete-region (match-beginning 2) (match-beginning 3))
+            (put-text-property (match-beginning 2) (match-beginning 3) 'invisible t))
+          (fill-region beg end))
+      (put-text-property beg end (if destructive 'fountain-delete 'invisible) t))))
+
+(defun fountain-fill-scene-heading (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (point))))
+    (if (memq 'scene-heading includes)
+        (let ((left-margin (if indent (car fountain-fill-scene-heading) 0))
+              (fill-column (cdr fountain-fill-scene-heading)))
+          (if destructive
+              (progn
+                (if (match-string 2) (delete-region (match-beginning 2) (match-end 2)))
+                (if (match-string 5) (delete-region (match-beginning 4) (match-end 0))))
+            (if (match-string 2)
+                (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
+            (if (match-string 5)
+                (put-text-property (match-beginning 4) (match-end 0) 'invisible t)))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-action (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (point))))
+    (if (memq 'action includes)
+        (let ((left-margin (if indent (car fountain-fill-action) 0))
+              (fill-column (cdr fountain-fill-action)))
+          (if (= (char-after beg) ?!)
+              (put-text-property beg (1+ beg) 'invisible t))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-character (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (point))))
+    (if (memq 'character includes)
+        (let ((left-margin (if indent (car fountain-fill-character) 0))
+              (fill-column (cdr fountain-fill-character)))
+          (if (match-string 2)
+              (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
+          (if (match-string 5)
+              (put-text-property (match-beginning 5) (match-end 5) 'invisible t))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-paren (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end ((progn
+                (goto-char (match-end 0))
+                (skip-chars-forward "\n\s\t")
+                (point)))))
+    (if (memq 'paren includes)
+        (let ((left-margin (if indent (car fountain-fill-paren) 0))
+              (fill-column (cdr fountain-fill-paren)))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-dialog (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (search-forward "\n" (match-end 0) 'move)
+               (point))))
+    (if (memq 'lines includes)
+        (let ((left-margin (if indent (car fountain-fill-dialog) 0))
+              (fill-column (cdr fountain-fill-dialog)))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-trans (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (skip-chars-forward "\n\s\t")
+               (point))))
+    (if (memq 'trans includes)
+        (let ((left-margin (if indent (car fountain-fill-trans) 0))
+              (fill-column (cdr fountain-fill-trans)))
+          (if (match-string 2)
+              (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-synopsis (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (if (= (following-char) ?\n)
+                   (forward-char 1))
+               (point))))
+    (if (memq 'synopsis includes)
+        (let ((left-margin (if indent (car fountain-fill-synopsis) 0))
+              (fill-column (cdr fountain-fill-synopsis)))
+          (if (match-string 2)
+              (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-note (includes &optional destructive)
+  (let ((beg (match-beginning 0))
+        (end (progn
+               (goto-char (match-end 0))
+               (if (= (following-char) ?\n) ; FIXME: this is synopsis
+                   (forward-char 1))
+               (point))))
+    (if (memq 'note includes)
+        (let ((left-margin (if indent (car fountain-fill-note) 0))
+              (fill-column (cdr fountain-fill-note)))
+          (fill-region beg end))
+      (if destructive
+          (delete-region beg end)
+        (put-text-property beg end 'invisible t)))))
+
+(defun fountain-fill-element (includes &optional destructive job)
+  ;; FIXME: instead of filling/deleting linearly, apply text properties to whole
+  ;; buffer then goto point-min and fill/delete all. ...but this won't work if
+  ;; the pages are calculated one at a time.
+  "Call appropropriate element parsing function for matched element at point.
+
+If element is memeber of INCLUDES and INDENT is non-nil, fill and
+indent the element, otherwise if INDENT is nil, just fill the
+element.
+
+If element is not a member of INCLUDES and DELETE is non-nil,
+delete the element. Otherwise add an invisible text property.
+
+Leave point at end of element."
+  (cond
+   ((fountain-match-metadata)
+    (fountain-fill-metadata includes destructive))
+   ((fountain-match-section-heading)
+    (fountain-fill-section-heading includes destructive))
+   ((fountain-match-scene-heading)
+    (fountain-fill-scene-heading includes destructive))
+   ((fountain-match-scene-heading)
+    (fountain-fill-scene-heading includes destructive))
+   ((fountain-match-action)
+    (fountain-fill-action includes destructive))
+   ((fountain-match-character)
+    (fountain-fill-character includes destructive))
+   ((fountain-match-paren)
+    (fountain-fill-paren includes destructive))
+   ((fountain-match-dialog)
+    (fountain-fill-dialog includes destructive))
+   ((fountain-match-trans)
+    (fountain-fill-trans includes destructive))
+   ((fountain-match-synopsis)
+    (fountain-fill-synopsis includes destructive))
+   ((fountain-match-note)
+    (fountain-fill-note includes destructive))
+   ((fountain-match-center)
+    (fountain-fill-center includes destructive))
+   ((fountain-match-page-break)
+    (fountain-fill-page-break includes destructive))))
+
+(defun fountain-print-format-region ()
+  nil)
+
 (defun fountain-fill-or-hide-element (includes &optional delete indent)
   "Match element and fill or make invisible.
 
@@ -1629,152 +1838,9 @@ delete the element. Otherwise add an invisible text property.
 
 Leave point at end of element."
   (cond
-   ((fountain-match-metadata)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (while (fountain-match-metadata)
-                   (forward-line 1))
-                 (skip-chars-forward "\n\s\t")
-                 (point))))
-      (if delete
-          (delete-region beg end)
-        (put-text-property beg end 'invisible t))))
-   ((fountain-match-section-heading)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (skip-chars-forward "\n\s\t")
-                 (point))))
-      (if (memq 'section-heading includes)
-          (let ((left-margin (if indent (car fountain-fill-section-heading) 0))
-                (fill-column (cdr fountain-fill-section-heading)))
-            (if delete
-                (delete-region (match-beginning 2) (match-beginning 3))
-              (put-text-property (match-beginning 2) (match-beginning 3) 'invisible t))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-scene-heading)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (point))))
-      (if (memq 'scene-heading includes)
-          (let ((left-margin (if indent (car fountain-fill-scene-heading) 0))
-                (fill-column (cdr fountain-fill-scene-heading)))
-            (if delete
-                (progn
-                  (if (match-string 2) (delete-region (match-beginning 2) (match-end 2)))
-                  (if (match-string 5) (delete-region (match-beginning 4) (match-end 0))))
-              (if (match-string 2)
-                  (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
-              (if (match-string 5)
-                  (put-text-property (match-beginning 4) (match-end 0) 'invisible t)))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-action)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (point))))
-      (if (memq 'action includes)
-          (let ((left-margin (if indent (car fountain-fill-action) 0))
-                (fill-column (cdr fountain-fill-action)))
-            (if (= (char-after beg) ?!)
-                (put-text-property beg (1+ beg) 'invisible t))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-character)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (point))))
-      (if (memq 'character includes)
-          (let ((left-margin (if indent (car fountain-fill-character) 0))
-                (fill-column (cdr fountain-fill-character)))
-            (if (match-string 2)
-                (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
-            (if (match-string 5)
-                (put-text-property (match-beginning 5) (match-end 5) 'invisible t))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-paren)
-    (let ((beg (match-beginning 0))
-          (end ((progn
-                  (goto-char (match-end 0))
-                  (skip-chars-forward "\n\s\t")
-                  (point)))))
-      (if (memq 'paren includes)
-          (let ((left-margin (if indent (car fountain-fill-paren) 0))
-                (fill-column (cdr fountain-fill-paren)))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-dialog)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (search-forward "\n" (match-end 0) 'move)
-                 (point))))
-      (if (memq 'lines includes)
-          (let ((left-margin (if indent (car fountain-fill-dialog) 0))
-                (fill-column (cdr fountain-fill-dialog)))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-trans)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (skip-chars-forward "\n\s\t")
-                 (point))))
-      (if (memq 'trans includes)
-          (let ((left-margin (if indent (car fountain-fill-trans) 0))
-                (fill-column (cdr fountain-fill-trans)))
-            (if (match-string 2)
-                (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-synopsis)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (if (= (following-char) ?\n)
-                     (forward-char 1))
-                 (point))))
-      (if (memq 'synopsis includes)
-          (let ((left-margin (if indent (car fountain-fill-synopsis) 0))
-                (fill-column (cdr fountain-fill-synopsis)))
-            (if (match-string 2)
-                (put-text-property (match-beginning 2) (match-end 2) 'invisible t))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))
-   ((fountain-match-note)
-    (let ((beg (match-beginning 0))
-          (end (progn
-                 (goto-char (match-end 0))
-                 (if (= (following-char) ?\n)
-                     (forward-char 1))
-                 (point))))
-      (if (memq 'note includes)
-          (let ((left-margin (if indent (car fountain-fill-note) 0))
-                (fill-column (cdr fountain-fill-note)))
-            (fill-region beg end))
-        (if delete
-            (delete-region beg end)
-          (put-text-property beg end 'invisible t)))))))
+
+
+   ))
 
 (defun fountain-fill-buffer ()
   (font-lock-mode 0)
