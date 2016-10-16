@@ -3802,7 +3802,7 @@ fountain-hide-ELEMENT is non-nil, adds fountain-ELEMENT to
   "Save `fountain-mode' options with `customize'."
   (interactive)
   (let (unsaved)
-    (dolist (opt '(fountain-switch-comment-syntax
+    (dolist (opt '(fountain-display-scene-numbers-in-margin
                    fountain-hide-emphasis-delim
                    fountain-hide-syntax-chars
                    fountain-align-elements
