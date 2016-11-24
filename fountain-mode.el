@@ -747,7 +747,8 @@ To switch between these levels, customize the value of
 \\[fountain-set-font-lock-decoration]."
   :prefix "fountain-"
   :link '(info-link "(emacs)Font Lock")
-  :group 'fountain)
+  :group 'fountain
+  :group 'faces)
 
 (defface fountain-action
   '((t nil))
